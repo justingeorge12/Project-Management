@@ -118,3 +118,26 @@ class TaskSerializer(serializers.ModelSerializer):
 
 
 
+
+
+class TaskListQuerySerializer(serializers.Serializer):
+
+    status = serializers.ChoiceField(
+        choices=Task.Status.choices,
+        required=False
+    )
+
+    priority = serializers.ChoiceField(
+        choices=Task.Priority.choices,
+        required=False
+    )
+
+    assignee = serializers.UUIDField(
+        required=False
+    )
+
+    search = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255
+    )

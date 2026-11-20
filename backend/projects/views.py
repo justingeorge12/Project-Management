@@ -19,6 +19,11 @@ from .serializers import ProjectMemberSerializer
 from tasks.serializers import TaskSerializer
 from tasks.models import Task
 
+from django.db.models import Count, Q
+from tasks.serializers import (TaskSerializer, TaskListQuerySerializer)
+from core.pagination import TaskPagination
+
+
 class ProjectViewSet(ModelViewSet):
 
     serializer_class = ProjectSerializer
@@ -147,6 +152,16 @@ class ProjectViewSet(ModelViewSet):
         # GET: List all tasks belonging to this project
         if request.method == "GET":
 
+            # 1. Validate query parameters
+            query_serializer = TaskListQuerySerializer(
+                data=request.query_params
+            )
+
+            query_serializer.is_valid(raise_exception=True)
+
+            filters = query_serializer.validated_data
+
+            # 2. Get tasks belonging to this project
             tasks = Task.objects.filter(
                 project=project
             ).select_related(
@@ -155,30 +170,53 @@ class ProjectViewSet(ModelViewSet):
                 "project"
             ).order_by("-created_at")
 
-            # Filter by status
-            status_filter = request.query_params.get("status")
+            # 3. Apply status filter
+            status_filter = filters.get("status")
 
             if status_filter:
                 tasks = tasks.filter(status=status_filter)
 
-            # Filter by priority
-            priority_filter = request.query_params.get("priority")
+            # 4. Apply priority filter
+            priority_filter = filters.get("priority")
 
             if priority_filter:
                 tasks = tasks.filter(priority=priority_filter)
 
-            # Filter by assignee
-            assignee_filter = request.query_params.get("assignee")
+            # 5. Apply assignee filter
+            assignee_filter = filters.get("assignee")
 
             if assignee_filter:
-                tasks = tasks.filter(assignee_id=assignee_filter)
+                tasks = tasks.filter(
+                    assignee_id=assignee_filter
+                )
+
+            # 6. Search title and description
+            search_query = filters.get("search", "").strip()
+
+            if search_query:
+                tasks = tasks.filter(
+                    Q(title__icontains=search_query) |
+                    Q(description__icontains=search_query)
+                )
+
+            # 7. Paginate results
+            paginator = TaskPagination()
+
+            paginated_tasks = paginator.paginate_queryset(
+                tasks,
+                request,
+                view=self
+            )
 
             serializer = TaskSerializer(
-                tasks,
+                paginated_tasks,
                 many=True
             )
 
-            return Response(serializer.data)
+            return paginator.get_paginated_response(
+                serializer.data
+            )
+
 
         # POST: Create a task inside this project
         serializer = TaskSerializer(
@@ -289,3 +327,85 @@ class ProjectViewSet(ModelViewSet):
 
             return Response(serializer.data)
 
+
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="dashboard",
+        permission_classes=[IsAuthenticated]
+    )
+    def dashboard(self, request, *args, **kwargs):
+        project = self.get_object()
+
+        statistics = Task.objects.filter(
+            project=project
+        ).aggregate(
+            total_tasks=Count("id"),
+            todo_tasks=Count(
+                "id",
+                filter=Q(status=Task.Status.TODO)
+            ),
+            in_progress_tasks=Count(
+                "id",
+                filter=Q(status=Task.Status.IN_PROGRESS)
+            ),
+            completed_tasks=Count(
+                "id",
+                filter=Q(status=Task.Status.COMPLETED)
+            ),
+            assigned_to_me=Count(
+                "id",
+                filter=Q(assignee=request.user)
+            )
+        )
+
+        return Response(statistics, status=status.HTTP_200_OK)
+
+
+
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="dashboard",
+        permission_classes=[IsAuthenticated]
+    )
+    def dashboard(self, request):
+        projects = self.get_queryset().annotate(
+            total_tasks=Count("tasks"),
+            todo_tasks=Count(
+                "tasks",
+                filter=Q(tasks__status=Task.Status.TODO)
+            ),
+            in_progress_tasks=Count(
+                "tasks",
+                filter=Q(tasks__status=Task.Status.IN_PROGRESS)
+            ),
+            completed_tasks=Count(
+                "tasks",
+                filter=Q(tasks__status=Task.Status.COMPLETED)
+            )
+        ).order_by("-created_at")
+
+        project_data = []
+
+        for project in projects:
+            project_data.append({
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "owner": project.owner.id,
+                "total_tasks": project.total_tasks,
+                "todo_tasks": project.todo_tasks,
+                "in_progress_tasks": project.in_progress_tasks,
+                "completed_tasks": project.completed_tasks
+            })
+
+        return Response({
+            "total_projects": len(project_data),
+            "total_tasks": sum(
+                project["total_tasks"] for project in project_data
+            ),
+            "projects": project_data
+        }, status=status.HTTP_200_OK)
