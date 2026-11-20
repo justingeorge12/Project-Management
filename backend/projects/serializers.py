@@ -99,3 +99,15 @@ class ProjectMemberSerializer(serializers.ModelSerializer):
             project=project,
             user_id=user_id
         )
+
+
+class AvailableUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+        ]

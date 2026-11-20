@@ -15,14 +15,15 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .serializers import ProjectMemberSerializer
-
+from .serializers import AvailableUserSerializer
 from tasks.serializers import TaskSerializer
 from tasks.models import Task
 
 from django.db.models import Count, Q
 from tasks.serializers import (TaskSerializer, TaskListQuerySerializer)
 from core.pagination import TaskPagination
-
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 class ProjectViewSet(ModelViewSet):
 
@@ -409,3 +410,114 @@ class ProjectViewSet(ModelViewSet):
             ),
             "projects": project_data
         }, status=status.HTTP_200_OK)
+
+
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="available-users",
+        permission_classes=[IsAuthenticated],
+    )
+    def available_users(self, request, *args, **kwargs):
+        project = self.get_object()
+
+        # Only the project owner can search for users to add.
+        if project.owner_id != request.user.id:
+            return Response(
+                {"detail": "Only the project owner can add members."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        search = request.query_params.get("search", "").strip()
+
+        existing_member_ids = ProjectMember.objects.filter(
+            project=project
+        ).values_list("user_id", flat=True)
+
+        users = User.objects.filter(
+            is_active=True
+        ).exclude(
+            id__in=existing_member_ids
+        )
+
+        if search:
+            users = users.filter(
+                Q(username__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+            )
+
+        users = users.order_by("username")[:10]
+
+        serializer = AvailableUserSerializer(users, many=True)
+
+        return Response({"results": serializer.data})
+
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="my-tasks",
+        permission_classes=[IsAuthenticated]
+    )
+    def my_tasks(self, request, *args, **kwargs):
+
+        # 1. Validate query parameters
+        query_serializer = TaskListQuerySerializer(
+            data=request.query_params
+        )
+        query_serializer.is_valid(raise_exception=True)
+
+        filters = query_serializer.validated_data
+
+        # 2. Get tasks created by or assigned to the logged-in user
+        tasks = Task.objects.filter(
+            Q(created_by=request.user) |
+            Q(assignee=request.user)
+        ).select_related(
+            "created_by",
+            "assignee",
+            "project"
+        ).order_by("-created_at").distinct()
+
+        # 3. Apply status filter
+        status_filter = filters.get("status")
+        if status_filter:
+            tasks = tasks.filter(status=status_filter)
+
+        # 4. Apply priority filter
+        priority_filter = filters.get("priority")
+        if priority_filter:
+            tasks = tasks.filter(priority=priority_filter)
+
+        # 5. Apply assignee filter
+        assignee_filter = filters.get("assignee")
+        if assignee_filter:
+            tasks = tasks.filter(assignee_id=assignee_filter)
+
+        # 6. Search title and description
+        search_query = filters.get("search", "").strip()
+        if search_query:
+            tasks = tasks.filter(
+                Q(title__icontains=search_query) |
+                Q(description__icontains=search_query)
+            )
+
+        # 7. Paginate results
+        paginator = TaskPagination()
+
+        paginated_tasks = paginator.paginate_queryset(
+            tasks,
+            request,
+            view=self
+        )
+
+        # 8. Serialize results
+        serializer = TaskSerializer(
+            paginated_tasks,
+            many=True
+        )
+
+        return paginator.get_paginated_response(serializer.data)
