@@ -45,7 +45,7 @@ function Projects() {
   }, []);
 
   return (
-    <div>
+    <div className="p-6 md:p-8">
 
       {/* Header */}
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">

@@ -1,17 +1,28 @@
+# Environment variables
 .env
 .env.*
-djvenv
+!.env.example
+
+backend/.env
+frontend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.py.class
+
+# Virtual environments
 djvenv/
 venv/
 env/
 .venv/
 
-__pycache__/
-*.py[cod]
-*$py.class
-
-
+# Logs
 *.log
+
+# Database
 db.sqlite3
+
+# Media and static files
 media/
 staticfiles/

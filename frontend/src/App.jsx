@@ -1,8 +1,8 @@
 
 import { Navigate, Route, Routes } from "react-router-dom";
 
-import Sidebar from "./components/layout/sidebar";
-import Topbar from "./components/layout/topbar";
+import Sidebar from "./components/layout/Sidebar";
+import Topbar from "./components/layout/Topbar";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
 import Dashboard from "./pages/Dashboard";
@@ -19,7 +19,7 @@ function DashboardLayout() {
 
       <Sidebar />
 
-      <main className="ml-6 flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <main className="ml-66 flex min-w-0 flex-1 flex-col overflow-y-auto">
 
         <Topbar />
 

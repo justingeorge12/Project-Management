@@ -136,7 +136,7 @@ function MyTasks() {
   };
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-6 p-6 md:p-8">
 
       {/* Header */}
       <div>
